@@ -1,0 +1,21 @@
+# .github/workflows/random-fail.yml
+name: Random Fail 50/50
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  random-fail:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run random fail script
+        run: |
+          echo "Decidindo se o job falha ou não..."
+          if [ $((RANDOM % 2)) -eq 0 ]; then
+            echo "😄 Sucesso!"
+            exit 0
+          else
+            echo "💥 Falha aleatória!"
+            exit 1
+          fi
