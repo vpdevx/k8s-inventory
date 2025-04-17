@@ -1,0 +1,20 @@
+name: Destroy and clean dashboard and monitors
+
+on:
+  workflow_dispatch:
+    inputs:
+      cliente:
+        description: "Nome do cliente a ser destruído (ex: mars)"
+        required: true
+        type: string
+
+jobs:
+  destroy_and_clean:
+    runs-on: ubuntu-latest
+
+    env: 
+      CLIENTE: ${{ github.event.inputs.cliente }}  # Definindo a variável de ambiente
+    steps: 
+      - name: Test
+        run: |
+          echo ${{ env.CLIENTE }}
