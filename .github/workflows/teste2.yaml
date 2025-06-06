@@ -1,0 +1,88 @@
+name: validateeeeeee
+
+on:
+  workflow_dispatch:
+    inputs:
+      cliente:
+        description: "Nome do cliente a ser destruído (ex: mars)"
+        required: true
+        type: string
+
+
+jobs:
+  destroy_and_clean:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env: 
+      CLIENTE: ${{ github.event.inputs.cliente }}  # Definindo a variável de ambiente
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Check if client directory exists
+        run: |
+          if [ ! -d "clientes/${{ env.CLIENTE }}" ]; then
+            echo "Diretório clientes/${{ env.CLIENTE }} não existe"
+            exit 1
+          fi
+
+      - name: Run Terraform destroy and cleanup
+        working-directory: clientes/${{ env.CLIENTE }}
+        run: |
+          set -e 
+
+          if [ ! -f main.tf ]; then
+            echo "main.tf not found"
+            exit 1
+          fi
+
+          dd_keys_json=$(aws ssm get-parameter \
+            --name "/jasper/${{ env.CLIENTE }}" \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text \
+            --region us-east-2)
+
+          dd_api_key=$(echo "$dd_keys_json" | jq -r '.dd_api_key')
+          dd_app_key=$(echo "$dd_keys_json" | jq -r '.dd_app_key')
+
+          if [[ -z "$dd_api_key" || -z "$dd_app_key" || "$dd_api_key" == null || "$dd_app_key" == null ]]; then
+            echo "API keys não encontradas ou inválidas no SSM: /jasper/${{ env.CLIENTE }}"
+            exit 1
+          fi
+
+          export DD_API_KEY=$dd_api_key
+          export DD_APP_KEY=$dd_app_key
+
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="key=dashboard.tfstate" \
+            -backend-config="region=us-east-1"
+
+          terraform workspace select ${{ env.CLIENTE }} || terraform workspace new ${{ env.CLIENTE }}
+
+          terraform validate
+          terraform destroy -auto-approve
+
+      - name: Delete client directory
+        run: |
+          rm -rf clientes/${{ env.CLIENTE }}
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: destroy and clean dashboard and monitors for ${{ env.CLIENTE }}"
